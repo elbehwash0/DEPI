@@ -7,13 +7,9 @@ import pandas as pd
 import numpy as np
 import random
 
-# ────────────────────────────────
-#   Make parent folder importable
-# ────────────────────────────────
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.append(parent_dir)
 
-# project-level helpers
 from app_helpers import (
     add_new_user,
     add_rating,
@@ -29,9 +25,6 @@ from utils.data_loader import (
 )
 
 
-# ────────────────────────────────
-#   Streamlit caching wrappers
-# ────────────────────────────────
 @st.cache_data
 def get_books_df():
     return load_cleaned_books()
@@ -53,14 +46,9 @@ def get_model():
 
 
 def refresh_caches():
-    """Clear cached @st.cache_data objects after we append to CSVs."""
     get_users_df.clear()
     get_ratings_df.clear()
 
-
-# ────────────────────────────────
-#   Authentication helper
-# ────────────────────────────────
 
 def authenticate(username: str, password: str) -> int | None:
     users = get_users_df()
@@ -71,10 +59,6 @@ def authenticate(username: str, password: str) -> int | None:
     return None if hit.empty else int(hit.iloc[0]["User-ID"])
 
 
-# ────────────────────────────────
-#   UI helper : show_book_card
-# ────────────────────────────────
-
 def show_book_card(
         book: dict,
         idx: int | None = None,
@@ -83,10 +67,6 @@ def show_book_card(
         slider_key: str | None = None,
         predicted_rating: float | None = None
 ):
-    """
-    Display a book cover + its metadata.
-    """
-
     def gv(key: str, default="Unknown"):
         val = book.get(key) or book.get(key.replace('-', '_'))
         if val in ("", None, np.nan, "unknown", "Unknown"):
@@ -94,10 +74,9 @@ def show_book_card(
         return val
 
     cols = st.columns([1, 3])
-    # choose the best cover
     cover_url = gv("Image-URL-L", "") or gv("Image-URL-M", "") or gv("Image-URL-S", "")
     if not cover_url:
-        cover_url = f"https://picsum.photos/120/180?random={idx}"  # fallback
+        cover_url = f"https://picsum.photos/120/180?random={idx}"
 
     with cols[0]:
         st.image(cover_url, use_column_width=True)
@@ -116,10 +95,6 @@ def show_book_card(
     return None
 
 
-# ────────────────────────────────
-#   Wrapper for model.recommend signature
-# ────────────────────────────────
-
 def get_recommendations(model, user_id: int, ratings_df, n: int = 10):
     try:
         return model.recommend(user_id, N=n, df=ratings_df)
@@ -127,12 +102,8 @@ def get_recommendations(model, user_id: int, ratings_df, n: int = 10):
         return model.recommend(user_id, N=n)
 
 
-# ────────────────────────────────
-#   Get popular books with caching
-# ────────────────────────────────
 @st.cache_data
 def get_popular_books(ratings_df, books_df, n=500):
-    """Get top n popular books by rating count."""
     pop = (ratings_df.groupby("ISBN")
            .size().reset_index(name="count")
            .sort_values("count", ascending=False))
@@ -140,28 +111,21 @@ def get_popular_books(ratings_df, books_df, n=500):
     return pop.head(n)
 
 
-# ────────────────────────────────
-#   Streamlit application
-# ────────────────────────────────
 def main():
     st.set_page_config(page_title="📚 Book Recommender", layout="wide")
     st.title("📚 Book Recommendation System")
 
-    # ------- Initialise session state -------
     defaults = {
         "username": "",
         "user_id": None,
         "selected_isbn": None,
         "nav_page": "Dashboard",
         "previous_page": None,
-        "displayed_popular_books": []  # Track displayed popular books
+        "displayed_popular_books": []
     }
     for k, v in defaults.items():
         st.session_state.setdefault(k, v)
 
-    # =========================================================
-    #   NOT LOGGED-IN  →  Sign-In / Register
-    # =========================================================
     if not st.session_state.username:
         st.info("Please sign in or register to continue")
         tab_si, tab_reg = st.tabs(["Sign In", "Register"])
@@ -214,15 +178,11 @@ def main():
                         st.experimental_rerun()
         return
 
-    # =========================================================
-    #   LOGGED-IN  →  Sidebar navigation
-    # =========================================================
     st.sidebar.markdown(f"**Logged in as:** {st.session_state.username}")
     if st.sidebar.button("Sign Out"):
         st.session_state.clear()
         st.experimental_rerun()
 
-    # Store current page in session state before navigation
     current_page = st.session_state.get("nav_page", "Dashboard")
 
     nav_options = ["Dashboard", "Popular Books For You", "Recommendations", "Book Details"]
@@ -230,7 +190,6 @@ def main():
                             index=nav_options.index(current_page),
                             key="nav_radio")
 
-    # Update navigation state if changed
     if page != current_page:
         st.session_state.previous_page = current_page
         st.session_state.nav_page = page
@@ -242,13 +201,9 @@ def main():
     ratings_df = get_ratings_df()
     user_id = st.session_state.user_id
 
-    # ---------------------------------------------------------
-    #   Dashboard
-    # ---------------------------------------------------------
     if page == "Dashboard":
         st.header("📊 Dashboard")
 
-        # ISBN Search Section
         st.subheader("Search by ISBN")
         isbn_search = st.text_input("Enter ISBN to search for a book:", key="isbn_search")
         if isbn_search:
@@ -264,7 +219,6 @@ def main():
             else:
                 st.error("No book found with that ISBN.")
 
-        # Regular search bar
         search = st.text_input("Search books by title or author", key="dashboard_search")
         if search:
             mask = (
@@ -290,22 +244,15 @@ def main():
         st.markdown(f"- **Books rated so far:** {len(user_ratings)}")
         st.markdown("- **Actions**:\n  - Rate popular books for you\n  - See your recommendations")
 
-    # ---------------------------------------------------------
-    #   Popular Books For You
-    # ---------------------------------------------------------
     elif page == "Popular Books For You":
         st.header("📚 Popular Books For You")
 
-        # Get top 500 popular books
         popular_books = get_popular_books(ratings_df, books_df, n=500)
 
-        # Get user's rated books
         user_rated = ratings_df[ratings_df["User-ID"] == user_id]["ISBN"].tolist()
 
-        # Filter out books the user has already rated
         available_books = popular_books[~popular_books["ISBN"].isin(user_rated)]
 
-        # Select random books to display (5 at a time)
         if "displayed_popular_books" not in st.session_state or not st.session_state.displayed_popular_books:
             if len(available_books) > 0:
                 sample_size = min(5, len(available_books))
@@ -329,10 +276,8 @@ def main():
                         save_trained_model(model)
                         st.success("Rating saved and model updated!")
 
-                        # Remove this book from displayed books
                         st.session_state.displayed_popular_books.remove(isbn)
 
-                        # Clear the cache to get fresh recommendations
                         get_popular_books.clear()
 
                         st.experimental_rerun()
@@ -343,14 +288,10 @@ def main():
                     st.session_state.nav_page = "Book Details"
                     st.experimental_rerun()
 
-            # Button to refresh the displayed books
             if st.button("Show me different books"):
                 st.session_state.displayed_popular_books = []
                 st.experimental_rerun()
 
-    # ---------------------------------------------------------
-    #   Recommendations
-    # ---------------------------------------------------------
     elif page == "Recommendations":
         st.header("🎯 Your Recommendations")
         model = get_model()
@@ -376,9 +317,6 @@ def main():
                     st.session_state.nav_page = "Book Details"
                     st.experimental_rerun()
 
-    # ---------------------------------------------------------
-    #   Book Details
-    # ---------------------------------------------------------
     elif page == "Book Details":
         st.header("📖 Book Details")
         isbn = st.session_state.get("selected_isbn")
@@ -397,14 +335,12 @@ def main():
                 show_book_card(book, idx=0)
                 st.markdown(f"**ISBN:** {isbn}")
 
-                # Back button
                 if st.button("← Back"):
                     previous_page = st.session_state.get("previous_page", "Dashboard")
                     st.session_state.nav_page = previous_page
                     st.session_state.selected_isbn = None
                     st.experimental_rerun()
 
-                # Rating section
                 already = isbn in ratings_df[ratings_df["User-ID"] == user_id]["ISBN"].values
                 if not already:
                     r = st.slider("Your rating", 1, 10, 5, key="detail_rate")
@@ -416,7 +352,6 @@ def main():
                             model = personalize_model_for_user(model, user_id, get_ratings_df())
                             save_trained_model(model)
                             st.success("Rating saved and model updated!")
-                            # Stay on the same page after rating
                             st.session_state.nav_page = "Book Details"
                             st.experimental_rerun()
                 else:
